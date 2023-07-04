@@ -2,7 +2,7 @@
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import numpy as np
 import torch
@@ -27,6 +27,7 @@ def get_training_results_dir(epoch: int, training_start_timestamp: str) -> str:
 
 def save_training_report(
     training_start_timestamp: str,
+    training_params: Dict[str, Any],
     training_stats: Dict[str, List],
     test_stats: Dict[str, float],
 ):
@@ -35,6 +36,7 @@ def save_training_report(
     """
     training_report = {
         "training_start_timestamp": training_start_timestamp,
+        "training_params": training_params,
         "training_stats": training_stats,
         "test_stats": test_stats,
     }
@@ -44,8 +46,8 @@ def save_training_report(
     json_filepath = folderpath / f"training_report_{training_start_timestamp}.json"
     with open(json_filepath, "w") as f:
         json.dump(training_report, f)
-    print(f"Saved training stats on {json_filepath}")
-    # TODO # save training report txt
+    print(f"Saved complete training report on {json_filepath}")
+    # save training report txt
     text_report = f"Model trained on {training_start_timestamp}"
     # text_report += f"\n* model.pt filepath: {trained_model_filepath}"
     text_report += f"\n* Complete JSON report filepath: {json_filepath}"
@@ -55,7 +57,10 @@ def save_training_report(
     text_report += f"\n* Minumum MAE: {np.min(training_stats['mae'])}"
     text_report += f"\n* Minimum RMSE: {np.min(training_stats['rmse'])}"
     text_report += f"\n* Minimum MAPE: {np.min(training_stats['mape'])}"
-    breakpoint()
+    txt_filepath = folderpath / f"training_report_{training_start_timestamp}.txt"
+    with open(txt_filepath, "w") as f:
+        f.write(text_report)
+    print(f"Saved summarized training report on {txt_filepath}")
 
 
 def save_model_checkpoint(

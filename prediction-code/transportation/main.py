@@ -45,10 +45,10 @@ parser.add_argument(
 parser.add_argument(
     "--momentum", type=float, default=0.9, help="Initial learning rate [default: 0.9]"
 )
-parser.add_argument(
-    "--optimizer", default="adam", help="adam or momentum [default: adam]"
-)
-parser.add_argument("--length", type=int, default=60, help="Size of temporal : 12")
+# parser.add_argument(
+#     "--optimizer", default="adam", help="adam or momentum [default: adam]"
+# )
+# parser.add_argument("--length", type=int, default=60, help="Size of temporal : 12")
 parser.add_argument(
     "--force", type=str, default=False, help="remove params dir", required=False
 )
@@ -77,13 +77,13 @@ parser.set_defaults(use_mixhop=False)
 FLAGS = parser.parse_args()
 decay = FLAGS.decay
 dataset_name = FLAGS.data_name
-Length = FLAGS.length
+# Length = FLAGS.length # not used
 batch_size = FLAGS.batch_size
 num_nodes = FLAGS.num_point
 epochs = FLAGS.max_epoch
 learning_rate = FLAGS.learning_rate
-optimizer = FLAGS.optimizer
-num_of_vertices = FLAGS.num_point
+# optimizer = FLAGS.optimizer # not used
+# num_of_vertices = FLAGS.num_point # not used
 use_mixhop = FLAGS.use_mixhop
 
 # TODO put in config files
@@ -135,6 +135,7 @@ prediction_path = "DVGCN_prediction_%s" % dataset_name
 
 
 # def get_data_loaders(dataset_name: str, batch_size: int, dataset_params: Dict[str, Any]) -> Tuple(DataLoader, DataLoader, DataLoader, np.ndarray, torch.Tensor):
+# TODO move to another file
 def get_data_loaders(
     dataset_name: str,
     batch_size: int,
@@ -237,22 +238,27 @@ if __name__ == "__main__":
 
     if use_mixhop:
         print("Using MixHop layers")
-        mh_coef = 3
     else:
         print("Using Vanilla GCN layers")
-        mh_coef = 1
+
+    c_in = num_of_features
+    c_out = 64
+    week = 24
+    day = 12
+    recent = 24
+    k = 3
+    Kt = 3
 
     # get model's structure
     model = DVGCN(
         c_in=num_of_features,
-        # c_out=64,
-        c_out=20,
+        c_out=c_out,
         num_nodes=num_nodes,
-        week=24,
-        day=12,
-        recent=24,  # hour
-        K=3,
-        Kt=3,
+        week=week,
+        day=day,
+        recent=recent,  # hour
+        K=k,
+        Kt=Kt,
         use_mixhop=use_mixhop,
         device=device,
     )
@@ -372,7 +378,6 @@ if __name__ == "__main__":
     print("The min mape epoch is : " + str(mape.index(min(mape))))
 
     # save training report
-    # training_params = TODO # save training params
     training_stats = {
         "train_loss": train_loss_list,
         "val_loss": val_loss_list,
@@ -381,7 +386,28 @@ if __name__ == "__main__":
         "mae": mae,
         "mape": mape,
     }
+    # TODO save training params
+    training_params = {
+        "dataset_name": dataset_name,
+        "batch_size": batch_size,
+        "epochs": epochs,
+        "learning_rate": learning_rate,
+        "decay": decay,
+        "optimizer": str(optimizer),
+        # model params:
+        "c_in": c_in,
+        "c_out": c_out,
+        "num_nodes": num_nodes,
+        "week": week,
+        "day": day,
+        "recent": recent,
+        "K": k,
+        "Kt": Kt,
+        "use_mixhop": use_mixhop,
+        "device": str(device),
+    }
     save_training_report(
+        training_params=training_params,
         training_start_timestamp=training_start_timestamp,
         training_stats=training_stats,
         test_stats=test_stats,
