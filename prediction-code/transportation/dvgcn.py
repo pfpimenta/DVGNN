@@ -28,6 +28,7 @@ class DVGCN(nn.Module):
         recent: int,
         K: int,
         Kt: int,
+        device: torch.device,
         use_mixhop: bool = False,
     ):
         """TODO param description"""
@@ -38,10 +39,28 @@ class DVGCN(nn.Module):
         else:
             mh_coef = 1
 
+        self.device = device
+
         tem_size = week + day + recent
-        self.block1 = ST_BLOCK_2(c_in, c_out, num_nodes, tem_size, K, Kt, use_mixhop)
+        self.block1 = ST_BLOCK_2(
+            c_in=c_in,
+            c_out=c_out,
+            num_nodes=num_nodes,
+            tem_size=tem_size,
+            K=K,
+            Kt=Kt,
+            use_mixhop=use_mixhop,
+            device=device,
+        )
         self.block2 = ST_BLOCK_2(
-            c_out * mh_coef, c_out, num_nodes, tem_size, K, Kt, use_mixhop
+            c_in=c_out * mh_coef,
+            c_out=c_out,
+            num_nodes=num_nodes,
+            tem_size=tem_size,
+            K=K,
+            Kt=Kt,
+            use_mixhop=use_mixhop,
+            device=device,
         )
         self.bn = BatchNorm2d(c_in, affine=False)
 

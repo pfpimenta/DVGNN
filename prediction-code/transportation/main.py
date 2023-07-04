@@ -124,7 +124,7 @@ if torch.cuda.is_available():
     device = torch.device(FLAGS.device)
 else:
     device = torch.device("cpu")
-# device = torch.device("cpu") # DEBUG
+device = torch.device("cpu")  # DEBUG
 print(f"Using device {device}")
 # breakpoint() # TODO use GPU
 
@@ -254,6 +254,7 @@ if __name__ == "__main__":
         K=3,
         Kt=3,
         use_mixhop=use_mixhop,
+        device=device,
     )
     model.to(device)  # to cuda
 

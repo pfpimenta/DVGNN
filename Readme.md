@@ -7,13 +7,13 @@ The code consists of two parts. The first part is dynamic causal graph generatio
 ##For the dynamic causal graph generation module,
 The setting are shown in configuration document：./graph_generation/configurations/Tdrive.conf
 ## Requirements:
-* tensorflow 
-* scipy 
-* numpy 
-* matplotlib 
-* pandas 
-* math 
-* seaborn 
+* tensorflow
+* scipy
+* numpy
+* matplotlib
+* pandas
+* math
+* seaborn
 * sklearn
 * argparse
 * configparser
@@ -22,7 +22,7 @@ The setting are shown in configuration document：./graph_generation/configurati
 ## Run the demo:
 ./graph_generation/Transportation or FMRI\main.py
 
-Then we will get the parameter file after training, for example, Tdrive_normalization_parameter.npz. Run dynamic_graph_trans_.py to generate the dynamic transition matrix, such as dynamic_Tdrive_adj.npy file. 
+Then we will get the parameter file after training, for example, Tdrive_normalization_parameter.npz. Run dynamic_graph_trans_.py to generate the dynamic transition matrix, such as dynamic_Tdrive_adj.npy file.
 
 
 
@@ -31,16 +31,16 @@ Then we will get the parameter file after training, for example, Tdrive_normaliz
 put the generative file from the first step to ./prediction/Transportation or FMRI/generated_adj (file directory)
 
 ## Requirements:
-* torch 
-* shutil  
+* torch
+* shutil
 * numpy
-* matplotlib 
-* pandas 
-* math 
-* tensorflow 
-* sklearn 
-* argparse 
-* csv 
+* matplotlib
+* pandas
+* math
+* tensorflow
+* sklearn
+* argparse
+* csv
 * time
 
 ## Run the demo:
@@ -49,4 +49,3 @@ put the generative file from the first step to ./prediction/Transportation or FM
 
 
 If you have any questions, please feel free to email me, gorgen@163.com!
-

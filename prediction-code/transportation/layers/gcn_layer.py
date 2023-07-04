@@ -1,8 +1,47 @@
 # -*- coding: utf-8 -*-
-# taken from https://github.com/senadkurtisi/pytorch-GCN/blob/main/src/model.py
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+
+# TODO move to another file
+def gcn_message_passing(
+    adj: torch.Tensor, x: torch.Tensor, device: torch.device, a_power: int = 1
+):
+    batch_size, num_features, num_nodes, time_size = x.shape
+
+    # get simmetrically normalized adjacency matrix from Kipf & Welling (2017)
+    adj = normalize_adjacency(adj=adj, device=device)
+    adj_power = adj.pow(a_power)
+    adj_power = adj_power.to_dense()  # Convert sparse matrix to dense
+
+    # Reshape adj_power to match the dimensions of x
+    adj_power = adj_power.unsqueeze(1).repeat(
+        1, time_size, 1, 1
+    )  # Shape: [batch_size, time_size, n, n]
+
+    # Reshape x to match the dimensions of adj_power
+    x_new = x.permute(
+        0, 3, 2, 1
+    ).contiguous()  # Shape: [batch_size, time_size, num_nodes, num_features]
+    x_new = x_new.view(
+        batch_size * time_size, num_nodes, num_features
+    )  # Reshape to [batch_size*time_size, num_nodes, num_features]
+
+    # Perform batch matrix multiplication
+    result = torch.bmm(
+        adj_power.view(-1, num_nodes, num_nodes), x_new
+    )  # Shape: [batch_size*time_size, num_nodes, num_features]
+
+    # Reshape the result back to the original shape of x
+    result = result.view(batch_size, time_size, num_nodes, num_features)
+    result = result.permute(
+        0, 3, 2, 1
+    )  # Shape: [batch_size, num_features, num_nodes, time_size]
+
+    # Assign the result back to x
+    x_new = result.clone()
+    return x_new
 
 
 # TODO move to another file
@@ -14,9 +53,9 @@ def normalize_adjacency(adj: torch.Tensor, device: torch.device):
     """
     adj = adj + torch.eye(adj.shape[1]).to(device)
 
-    # TODO problem? adj matrix is not only 0s and 1s
-    binary_adj = (adj != 0).to(torch.int32)
-    node_degrees = torch.sum(binary_adj, dim=1)
+    # TODO problem? adj matrix is not only 0s and 1s... verify
+    # binary_adj = (adj != 0).to(torch.int32)
+    node_degrees = torch.sum(adj, dim=1)
     node_degrees = torch.pow(node_degrees, -0.5)
     node_degrees[node_degrees == float("inf")] = 0.0
     node_degrees[node_degrees != node_degrees] = 0.0
@@ -34,8 +73,15 @@ class GCNLayer(nn.Module):
     https://github.com/senadkurtisi/pytorch-GCN/blob/main/src/model.py)
     """
 
-    def __init__(self, input_size: int, output_size: int, use_bias: bool = True):
+    def __init__(
+        self,
+        input_size: int,
+        output_size: int,
+        device: torch.device,
+        use_bias: bool = True,
+    ):
         super(GCNLayer, self).__init__()
+        self.device = device
         self.weight = nn.Parameter(
             torch.FloatTensor(torch.zeros(size=(input_size, output_size)))
         )
@@ -52,49 +98,38 @@ class GCNLayer(nn.Module):
         if self.bias is not None:
             nn.init.zeros_(self.bias)
 
-    def forward(self, x: torch.Tensor, adj: torch.Tensor):
-        # H{i+1} = activation_func(Adj * H{i} * W{i})
-
-        # x.shape : [batch_num,in_channels,num_nodes,tem_size]
-        # adj.shape : [num_nodes, num_nodes]
-        # self.weight.shape : torch.Size([input_size, output_size])
-        # self.bias.shape : torch.Size([output_size])
-        # x_out.shape
+    def gcn_conv(self, x: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
         batch_size, num_features, num_nodes, time_size = x.shape
+        output_features_size = self.weight.shape[1]
 
-        # TODO check if these for loops make sense
-        # x = x @ self.weight
-        # output_features_size = self.weight.shape[1]
-        # x_out = torch.zeros(size=(batch_size, output_features_size, num_nodes, time_size))
-        # for batch_i in range(batch_size):
-        #     for time_i in range(time_size):
-        #         x_out[batch_i, :, :, time_i] = (x[batch_i, :, :, time_i].clone().transpose(0, 1) @ self.weight).transpose(0, 1)
-        # TODO use torch.einsum instead ?
-        # x_out_ein = torch.zeros(size=(batch_size, output_features_size, num_nodes, time_size))
+        if self.weight.device != self.device:
+            self.weight = self.weight.to(self.device)
+
+        # originally: x = x @ self.weight
         x = torch.einsum("abcd, bx -> axcd", x, self.weight)
 
-        # x += self.bias
+        # originally: x += self.bias
         if self.bias is not None:
-            for batch_i in range(batch_size):
-                for time_i in range(time_size):
-                    x[batch_i, :, :, time_i] = (
-                        x[batch_i, :, :, time_i].clone().transpose(0, 1) + self.bias
-                    ).transpose(0, 1)
-        # TODO remove for somehow
-        # x_add = torch.add(x, self.bias)
-        # breakpoint()
+            # optimized for GPU
+            bias = self.bias.unsqueeze(0).unsqueeze(2).unsqueeze(3).to(self.device)
+            x += bias
 
-        # get simmetrically normalized adjacency matrix from Kipf & Welling (2017)
-        # x = torch.sparse.mm(adj, x)
-        device = next(self.parameters()).device
-        adj = normalize_adjacency(adj=adj, device=device)
-        for batch_i in range(batch_size):
-            for time_i in range(time_size):
-                x[batch_i, :, :, time_i] = torch.sparse.mm(
-                    adj[batch_i, :, :],
-                    (x[batch_i, :, :, time_i].clone()).transpose(0, 1),
-                ).transpose(0, 1)
+        # originally: x = torch.sparse.mm(adj, x)
+        x = gcn_message_passing(a_power=1, adj=adj, x=x, device=self.device)
 
         x = F.leaky_relu(x)
+        return x
 
+    def forward(self, x: torch.Tensor, adj: torch.Tensor):
+        """
+        Applies the following operation:
+        X{i+1} = activation_func(Adj * X{i} * W{i})
+        where:
+            x.shape : [batch_num, in_channels, num_nodes, tem_size]
+            adj.shape : [num_nodes, num_nodes]
+            self.weight.shape : [in_channels, out_channels]
+            self.bias.shape : [out_channels]
+            x_out.shape : [batch_num, out_channels, num_nodes, tem_size]
+        """
+        x = self.gcn_conv(x=x, adj=adj)
         return x

@@ -2,7 +2,7 @@
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Dict, List
 
 import numpy as np
 import torch
@@ -25,28 +25,14 @@ def get_training_results_dir(epoch: int, training_start_timestamp: str) -> str:
     return training_results_dir
 
 
-# def get_checkpoint_name(epoch: int, training_start_timestamp: str) -> str:
-#     checkpoint_name = f"{training_start_timestamp}_e{epoch:0>3d}"
-#     return checkpoint_name
-
-# def get_training_results_dir(epoch: int, training_start_timestamp: str) -> str:
-#     project_root_folderpath = get_project_root_folderpath()
-#     checkpoint_name = get_checkpoint_name(epoch=epoch, training_start_timestamp=training_start_timestamp)
-#     training_results_dir =
-#     return training_results_dir
-
-
 def save_training_report(
     training_start_timestamp: str,
     training_stats: Dict[str, List],
-    # train_loss_list: List[float],
-    # val_loss_list: List[float],
-    # train_time_list: List[float],
-    # rmse_list: List[float],
-    # mae_list: List[float],
-    # mape_list: List[float],
     test_stats: Dict[str, float],
 ):
+    """Saves training information in a JSON file
+    (stats of each epoch, validation results).
+    """
     training_report = {
         "training_start_timestamp": training_start_timestamp,
         "training_stats": training_stats,
@@ -58,8 +44,18 @@ def save_training_report(
     json_filepath = folderpath / f"training_report_{training_start_timestamp}.json"
     with open(json_filepath, "w") as f:
         json.dump(training_report, f)
-
     print(f"Saved training stats on {json_filepath}")
+    # TODO # save training report txt
+    text_report = f"Model trained on {training_start_timestamp}"
+    # text_report += f"\n* model.pt filepath: {trained_model_filepath}"
+    text_report += f"\n* Complete JSON report filepath: {json_filepath}"
+    text_report += (
+        f"\n* Average time per epoch: {np.mean(training_stats['train_time'])}"
+    )
+    text_report += f"\n* Minumum MAE: {np.min(training_stats['mae'])}"
+    text_report += f"\n* Minimum RMSE: {np.min(training_stats['rmse'])}"
+    text_report += f"\n* Minimum MAPE: {np.min(training_stats['mape'])}"
+    breakpoint()
 
 
 def save_model_checkpoint(

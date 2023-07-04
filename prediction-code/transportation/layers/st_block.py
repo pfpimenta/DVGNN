@@ -3,10 +3,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from layers.gcn_layer import GCNLayer
-
-# from layers.mixhop import MixHop
-# from layers.mixhop_tf2 import GCN
-# from layers.mixhop_tf1_upgraded import mixhop_layer
 from layers.mixhop_layer import MixHopLayer
 from layers.t_cheby_conv_ds import T_cheby_conv_ds
 from layers.ttat import TATT_1
@@ -25,14 +21,14 @@ class ST_BLOCK_2(nn.Module):
         tem_size: int,
         K: int,
         Kt: int,
+        device: torch.device,
         use_mixhop: bool = False,
     ):
         super(ST_BLOCK_2, self).__init__()
-        # self.device = torch.device("cuda:0")
-        # self.conv1 = Conv2d(c_in, c_out, kernel_size=(1, 1), stride=(1, 1), bias=True)
+        # before: Chebychev conv
         # self.dynamic_gcn=T_cheby_conv_ds(c_out,2*c_out,K,Kt)
         # self.dynamic_gcn2 = T_cheby_conv_ds(c_out,c_out,K,Kt)
-        # TODO modification: MixHop layers
+        # modification: MixHop layers or Vanilla GCN layers
         self.use_mixhop = use_mixhop
         if self.use_mixhop:
             # print("Using MixHop")
@@ -42,15 +38,23 @@ class ST_BLOCK_2(nn.Module):
                 input_size=c_out * len(adjacency_powers),
                 output_size=c_out * 2,
                 adjacency_powers=adjacency_powers,
+                device=device,
             )
             self.dynamic_gcn2 = MixHopLayer(
-                input_size=c_out, output_size=c_out, adjacency_powers=adjacency_powers
+                input_size=c_out,
+                output_size=c_out,
+                adjacency_powers=adjacency_powers,
+                device=device,
             )
         else:
             # print("Using Vanilla GCN")
             self.c_out = c_out
-            self.dynamic_gcn = GCNLayer(input_size=c_out, output_size=c_out * 2)
-            self.dynamic_gcn2 = GCNLayer(input_size=c_out, output_size=c_out)
+            self.dynamic_gcn = GCNLayer(
+                input_size=c_out, output_size=c_out * 2, device=device
+            )
+            self.dynamic_gcn2 = GCNLayer(
+                input_size=c_out, output_size=c_out, device=device
+            )
 
         self.K = K
         self.tem_size = tem_size
@@ -61,21 +65,16 @@ class ST_BLOCK_2(nn.Module):
         self.TATT_1 = TATT_1(self.c_out, num_nodes, tem_size)
 
     def forward(self, x: torch.Tensor, supports: torch.Tensor, adj_r: torch.Tensor):
-        # breakpoint()
         shape = supports.shape
 
-        x_input1 = self.time_conv(x)
+        x_input1 = self.time_conv(x)  # "Feature sampling" from the article
 
         if shape[0] == 207:
             x_input1 = F.leaky_relu(x_input1)
         if shape[0] == 170:
             x_input1 = F.leaky_relu(x_input1)
 
-        # print(f"DEBUG before gcn2 x.shape: {x_input1.shape}")
-        # DEBUG before gcn2 x.shape: torch.Size([16, 20, 64, 60])
         x_input2 = self.dynamic_gcn2(x_input1, adj_r)
-        # print(f"DEBUG after  gcn2 x.shape: {x_input2.shape}")
-        # DEBUG after  gcn2 x.shape: torch.Size([48, 20, 64, 60])
         x_1 = self.dynamic_gcn(x_input2, adj_r)
         filter, gate = torch.split(x_1, [self.c_out, self.c_out], 1)
         x_1 = torch.sigmoid(gate) * F.leaky_relu(filter)
@@ -84,37 +83,13 @@ class ST_BLOCK_2(nn.Module):
         T_coef = T_coef.transpose(-1, -2)
         x_1 = torch.einsum("bcnl,blq->bcnq", x_1, T_coef)
         if self.use_mixhop:
+            # MixHop
             out = self.bn(
                 F.leaky_relu(x_1) + torch.concat([x_input1, x_input1, x_input1], dim=1)
-            )  # MixHop
+            )
         else:
-            out = self.bn(F.leaky_relu(x_1) + x_input1)  # vanilla GCN
-        return out, adj_r, T_coef
-
-    def forward_2(self, x: torch.Tensor, supports: torch.Tensor, adj_r: torch.Tensor):
-        # breakpoint()
-        shape = supports.shape
-
-        x = self.time_conv(x)
-
-        if shape[0] == 207:
-            x = F.leaky_relu(x)
-        if shape[0] == 170:
-            x = F.leaky_relu(x)
-
-        # GCNs for capturing spatial features
-        x = self.dynamic_gcn2(x, adj_r)
-        x = F.leaky_relu(x)
-        x = self.dynamic_gcn(x, adj_r)
-        x = F.leaky_relu(x)
-        # x=F.dropout(x,0.5,self.training)
-        # temporal attention to capture temporal features
-        T_coef = self.TATT_1(x)
-        T_coef = T_coef.transpose(-1, -2)
-        x = torch.einsum("bcnl,blq->bcnq", x, T_coef)
-
-        # residual connection
-        out = self.bn(F.leaky_relu(x) + x)
+            # Vanilla GCN
+            out = self.bn(F.leaky_relu(x_1) + x_input1)
         return out, adj_r, T_coef
 
 
