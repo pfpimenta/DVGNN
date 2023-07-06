@@ -44,24 +44,23 @@ class TATT_1(nn.Module):
     def forward(self, seq: torch.Tensor):
         # try:
         # DEBUG seq shape w T_cheby_conv_ds: torch.Size([16, 60, 64, 60])
-        # torch.Size([16, 20, 64, 60]), onde 20 == c_out
         c1 = seq.permute(0, 1, 3, 2)  # b,c,n,l->b,c,l,n
         f1 = self.conv1(c1).squeeze()  # b,l,n
 
         c2 = seq.permute(0, 2, 1, 3)  # b,c,n,l->b,n,c,l
         f2 = self.conv2(c2).squeeze()  # b,c,n
 
+        # fix case where there is only 1 instance in batch
+        if len(f1.shape) == 2:
+            f1 = torch.unsqueeze(f1, dim=0)
+        if len(f2.shape) == 2:
+            f2 = torch.unsqueeze(f2, dim=0)
+
         logits = torch.sigmoid(torch.matmul(torch.matmul(f1, self.w), f2) + self.b)
         logits = torch.matmul(self.v, logits)
-
         logits = logits.permute(0, 2, 1).contiguous()
         logits = self.bn(logits).permute(0, 2, 1).contiguous()
         device = next(self.parameters()).device
         self.B_matrix = self.B_matrix.to(device)
-        # coefs = torch.softmax(logits + self.B_matrix, -1)
-        # RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
         coefs = torch.softmax(logits + self.B_matrix, -1)
-        # except Exception as e:
-        #     print(e)
-        #     breakpoint()
         return coefs

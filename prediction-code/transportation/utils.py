@@ -27,15 +27,17 @@ def get_training_results_dir(epoch: int, training_start_timestamp: str) -> str:
 
 def save_training_report(
     training_start_timestamp: str,
+    dataset_params: Dict[str, Any],
+    model_params: Dict[str, Any],
     training_params: Dict[str, Any],
     training_stats: Dict[str, List],
     test_stats: Dict[str, float],
 ):
-    """Saves training information in a JSON file
-    (stats of each epoch, validation results).
-    """
+    """Saves training information in a JSON file"""
     training_report = {
         "training_start_timestamp": training_start_timestamp,
+        "dataset_params": dataset_params,
+        "model_params": model_params,
         "training_params": training_params,
         "training_stats": training_stats,
         "test_stats": test_stats,
@@ -57,6 +59,7 @@ def save_training_report(
     text_report += f"\n* Minumum MAE: {np.min(training_stats['mae'])}"
     text_report += f"\n* Minimum RMSE: {np.min(training_stats['rmse'])}"
     text_report += f"\n* Minimum MAPE: {np.min(training_stats['mape'])}"
+    text_report += "\n"
     txt_filepath = folderpath / f"training_report_{training_start_timestamp}.txt"
     with open(txt_filepath, "w") as f:
         f.write(text_report)

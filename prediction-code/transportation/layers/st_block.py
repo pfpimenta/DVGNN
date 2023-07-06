@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from typing import List
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -22,6 +24,7 @@ class ST_BLOCK_2(nn.Module):
         K: int,
         Kt: int,
         device: torch.device,
+        adjacency_powers: List[int],
         use_mixhop: bool = False,
     ):
         super(ST_BLOCK_2, self).__init__()
@@ -30,20 +33,20 @@ class ST_BLOCK_2(nn.Module):
         # self.dynamic_gcn2 = T_cheby_conv_ds(c_out,c_out,K,Kt)
         # modification: MixHop layers or Vanilla GCN layers
         self.use_mixhop = use_mixhop
+        self.adjacency_powers = adjacency_powers
         if self.use_mixhop:
             # print("Using MixHop")
-            adjacency_powers = [0, 1, 2]
-            self.c_out = c_out * len(adjacency_powers)  # only for MixHop
+            self.c_out = c_out * len(self.adjacency_powers)  # only for MixHop
             self.dynamic_gcn = MixHopLayer(
-                input_size=c_out * len(adjacency_powers),
+                input_size=c_out * len(self.adjacency_powers),
                 output_size=c_out * 2,
-                adjacency_powers=adjacency_powers,
+                adjacency_powers=self.adjacency_powers,
                 device=device,
             )
             self.dynamic_gcn2 = MixHopLayer(
                 input_size=c_out,
                 output_size=c_out,
-                adjacency_powers=adjacency_powers,
+                adjacency_powers=self.adjacency_powers,
                 device=device,
             )
         else:
@@ -84,9 +87,8 @@ class ST_BLOCK_2(nn.Module):
         x_1 = torch.einsum("bcnl,blq->bcnq", x_1, T_coef)
         if self.use_mixhop:
             # MixHop
-            out = self.bn(
-                F.leaky_relu(x_1) + torch.concat([x_input1, x_input1, x_input1], dim=1)
-            )
+            x_input1 = torch.concat([x_input1] * len(self.adjacency_powers), dim=1)
+            out = self.bn(F.leaky_relu(x_1) + x_input1)
         else:
             # Vanilla GCN
             out = self.bn(F.leaky_relu(x_1) + x_input1)

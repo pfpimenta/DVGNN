@@ -4,12 +4,13 @@
 （1）“Dynamic Causal Explanation Based Diffusion-Variational Graph Neural Network for Spatio-temporal Forecasting”；
 # """
 import argparse
+import configparser
 import os
 import sys
 from datetime import datetime
 from pathlib import Path
 from time import time
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,6 +24,9 @@ from lib.utils import compute_val_loss, evaluate, predict, scaled_Laplacian
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from utils import save_model_checkpoint, save_training_report
+
+# set torch seed to assure reprocibility
+torch.manual_seed(0)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--device", type=str, default="cuda:0", help="")
@@ -72,6 +76,9 @@ parser.add_argument(
 parser.add_argument("--use_mixhop", action="store_true")
 parser.add_argument("--gcn", dest="use_mixhop", action="store_false")
 parser.set_defaults(use_mixhop=False)
+parser.add_argument("--dynamic_graph", action="store_true")
+parser.add_argument("--static_graph", dest="dynamic_graph", action="store_false")
+parser.set_defaults(dynamic_graph=True)
 
 # parse arguments
 FLAGS = parser.parse_args()
@@ -86,31 +93,34 @@ learning_rate = FLAGS.learning_rate
 # num_of_vertices = FLAGS.num_point # not used
 use_mixhop = FLAGS.use_mixhop
 
-# TODO put in config files
-if dataset_name == "Tdrive":
-    points_per_hour = 12
-    num_of_features = 1
-    merge = False
-    num_for_predict = 12
-    num_of_weeks = 2
-    num_of_days = 1
-    num_of_hours = 2
-if dataset_name == "Los_loop":
-    points_per_hour = 6
-    num_of_features = 1
-    merge = False
-    num_for_predict = 12
-    num_of_weeks = 2
-    num_of_days = 1
-    num_of_hours = 2
-if dataset_name == "PEMS08":
-    points_per_hour = 12
-    num_of_features = 3
-    merge = False
-    num_for_predict = 12
-    num_of_weeks = 2
-    num_of_days = 1
-    num_of_hours = 2
+# TODO use to select if Adj matrix used will be the dynamic or the static one
+dynamic_graph = FLAGS.dynamic_graph
+
+
+# if dataset_name == "Tdrive":
+#     points_per_hour = 12
+#     num_of_features = 1
+#     merge = False
+#     num_for_predict = 12
+#     num_of_weeks = 2
+#     num_of_days = 1
+#     num_of_hours = 2
+# if dataset_name == "Los_loop":
+#     points_per_hour = 6
+#     num_of_features = 1
+#     merge = False
+#     num_for_predict = 12
+#     num_of_weeks = 2
+#     num_of_days = 1
+#     num_of_hours = 2
+# if dataset_name == "PEMS08":
+#     points_per_hour = 12
+#     num_of_features = 3
+#     merge = False
+#     num_for_predict = 12
+#     num_of_weeks = 2
+#     num_of_days = 1
+#     num_of_hours = 2
 
 
 model_name = "DVGCN_%s" % dataset_name
@@ -124,7 +134,7 @@ if torch.cuda.is_available():
     device = torch.device(FLAGS.device)
 else:
     device = torch.device("cpu")
-device = torch.device("cpu")  # DEBUG
+# device = torch.device("cpu")  # DEBUG
 print(f"Using device {device}")
 # breakpoint() # TODO use GPU
 
@@ -217,62 +227,34 @@ def get_data_loaders(
     return train_loader, val_loader, test_loader, true_value, supports
 
 
-if __name__ == "__main__":
-    dataset_params = {
-        "num_of_weeks": num_of_weeks,
-        "num_of_days": num_of_days,
-        "num_of_hours": num_of_hours,
-        "num_for_predict": num_for_predict,
-        "points_per_hour": points_per_hour,
-        "merge": merge,
+# TODO move to another file
+def evaluation(
+    model: torch.nn.Module,
+    test_loader: DataLoader,
+    true_value: np.ndarray,
+    supports: torch.Tensor,
+    device: torch.device,
+    epoch: int,
+):
+    # Evaluate on the test data
+    start_time_test = time()
+    test_rmse, test_mae, test_mape = evaluate(
+        model, test_loader, true_value, supports, device, epoch
+    )
+    end_time_test = time()
+    test_time = np.mean(end_time_test - start_time_test)
+    test_stats = {
+        "test_time": test_time,
+        "rmse": test_rmse,
+        "mae": test_mae,
+        "mape": test_mape,
     }
-    train_loader, val_loader, test_loader, true_value, supports = get_data_loaders(
-        dataset_name=dataset_name,
-        batch_size=batch_size,
-        dataset_params=dataset_params,
-        device=device,
-    )
+    # print("Test time: %.2f" % test_time)
+    return test_stats
 
-    # loss function MSE
-    loss_function = nn.MSELoss()
 
-    if use_mixhop:
-        print("Using MixHop layers")
-    else:
-        print("Using Vanilla GCN layers")
-
-    c_in = num_of_features
-    c_out = 64
-    week = 24
-    day = 12
-    recent = 24
-    k = 3
-    Kt = 3
-
-    # get model's structure
-    model = DVGCN(
-        c_in=num_of_features,
-        c_out=c_out,
-        num_nodes=num_nodes,
-        week=week,
-        day=day,
-        recent=recent,  # hour
-        K=k,
-        Kt=Kt,
-        use_mixhop=use_mixhop,
-        device=device,
-    )
-    model.to(device)  # to cuda
-
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=wdecay)
-    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, decay)
-
-    # calculate origin loss in epoch 0
-    compute_val_loss(model, val_loader, loss_function, supports, device, epoch=0)
-
-    # compute testing set MAE, RMSE, MAPE before training
-    evaluate(model, test_loader, true_value, supports, device, epoch=0)
-
+# TODO move to another file
+def train():
     clip = 5
     val_loss_list = []
     train_loss_list = []
@@ -349,35 +331,13 @@ if __name__ == "__main__":
 
     print("Training finished")
     print("Training time/epoch: %.2f secs/epoch" % np.mean(train_time))
-
-    start_time_test = time()
-    prediction, spatial_at, parameter_adj = predict(
-        model, test_loader, supports, device
-    )
-    end_time_test = time()
-
-    test_rmse, test_mae, test_mape = evaluate(
-        model, test_loader, true_value, supports, device, epoch
-    )
-    test_stats = {
-        "rmse": test_rmse,
-        "mae": test_mae,
-        "mape": test_mape,
-    }
-
-    test_time = np.mean(end_time_test - start_time_test)
-    # print("Test time: %.2f" % test_time)
-
     print("The min rmse is : " + str(min(rmse)))
     print("The min rmse epoch is : " + str(rmse.index(min(rmse))))
-
     print("The min mae is : " + str(min(mae)))
     print("The min mae epoch is : " + str(mae.index(min(mae))))
-
     print("The min mape is : " + str(min(mape)))
     print("The min mape epoch is : " + str(mape.index(min(mape))))
 
-    # save training report
     training_stats = {
         "train_loss": train_loss_list,
         "val_loss": val_loss_list,
@@ -386,7 +346,177 @@ if __name__ == "__main__":
         "mae": mae,
         "mape": mape,
     }
-    # TODO save training params
+    return model, training_start_timestamp, training_stats
+
+
+if __name__ == "__main__":
+
+    # get dataset params
+    data_folderpath = Path(__file__).parent.parent.parent.resolve() / "data/"
+    dataset_params_filepath = (
+        data_folderpath / "Transportation" / "dataset_params" / f"{dataset_name}.conf"
+    )
+    print("Reading dataset params configuration file: %s" % (dataset_params_filepath))
+    dataset_params_configparser = configparser.ConfigParser()
+    dataset_params_configparser.read(dataset_params_filepath)
+    dataset_params = {
+        "num_for_predict": int(
+            dataset_params_configparser["params"]["num_for_predict"]
+        ),
+        "num_of_weeks": int(dataset_params_configparser["params"]["num_of_weeks"]),
+        "num_of_days": int(dataset_params_configparser["params"]["num_of_days"]),
+        "num_of_hours": int(dataset_params_configparser["params"]["num_of_hours"]),
+        "num_of_features": int(
+            dataset_params_configparser["params"]["num_of_features"]
+        ),
+        "points_per_hour": int(
+            dataset_params_configparser["params"]["points_per_hour"]
+        ),
+        "merge": dataset_params_configparser["params"].getboolean("merge"),
+    }
+    # load dataset
+    train_loader, val_loader, test_loader, true_value, supports = get_data_loaders(
+        dataset_name=dataset_name,
+        batch_size=batch_size,
+        dataset_params=dataset_params,
+        device=device,
+    )
+
+    # initialize model
+    model_params = {
+        "c_in": dataset_params["num_of_features"],
+        "c_out": 64,
+        "num_nodes": num_nodes,
+        "week": 24,
+        "day": 12,
+        "recent": 24,
+        "K": 3,
+        "Kt": 3,
+        "use_mixhop": use_mixhop,
+        "adjacency_powers": [0, 1, 2, 3],
+        "device": str(device),
+    }
+    print(f"Using model params: {model_params}")
+    model = DVGCN(**model_params)
+    model.to(device)  # to cuda
+
+    # loss function MSE
+    loss_function = nn.MSELoss()
+
+    # Optimizer: Adam
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=wdecay)
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, decay)
+
+    # calculate origin loss in epoch 0
+    compute_val_loss(model, val_loader, loss_function, supports, device, epoch=0)
+
+    # compute testing set MAE, RMSE, MAPE before training
+    evaluate(model, test_loader, true_value, supports, device, epoch=0)
+
+    # train model
+    # TODO modularizar essa parte aqui
+    clip = 5
+    val_loss_list = []
+    train_loss_list = []
+    train_time = []
+    rmse = []
+    mae = []
+    mape = []
+    training_start_timestamp = str(datetime.now().strftime("%Y_%m_%d_%Hh%M"))
+    print(f"training_start_timestamp: {training_start_timestamp}\n\n")
+
+    save_model_checkpoint(
+        model=model, epoch=0, training_start_timestamp=training_start_timestamp
+    )
+    for epoch in range(1, epochs + 1):
+        train_l = []
+        start_time_train = time()
+        # for train_w, train_d, train_r, train_t, train_adj_r in train_loader:
+        for i, batch in enumerate(tqdm(train_loader, desc="Training", file=sys.stdout)):
+            train_w, train_d, train_r, train_t, train_adj_r = batch
+            train_w = train_w.to(device)
+            train_d = train_d.to(device)
+            train_r = train_r.to(device)
+            train_t = train_t.to(device)
+            train_adj_r = train_adj_r.to(device)
+
+            model.train()  # train pattern
+            optimizer.zero_grad()  # grad to 0
+
+            output, _, A = model(train_w, train_d, train_r, supports, train_adj_r)
+
+            loss = loss_function(output, train_t)
+            # backward p
+            loss.backward()
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
+
+            # update parameter
+            optimizer.step()
+
+            training_loss = loss.item()
+            train_l.append(training_loss)
+        scheduler.step()
+        end_time_train = time()
+        train_l = np.mean(train_l)
+        train_loss_list.append(train_l)
+        print(
+            "epoch step: %s, training loss: %.2f, time: %.2fs"
+            % (epoch, train_l, end_time_train - start_time_train)
+        )
+        train_time.append(end_time_train - start_time_train)
+
+        # compute validation loss
+        valid_loss = compute_val_loss(
+            model, val_loader, loss_function, supports, device, epoch
+        )
+        val_loss_list.append(valid_loss)
+
+        # evaluate the model on testing set
+        rmse1, mae1, mape1 = evaluate(
+            model, test_loader, true_value, supports, device, epoch
+        )
+
+        rmse1 = round(rmse1, 4)
+        mae1 = round(mae1, 4)
+        mape1 = round(mape1, 4)
+
+        rmse.append(rmse1)
+        mae.append(mae1)
+        mape.append(mape1)
+
+        # save model checkpoint
+        save_model_checkpoint(
+            model=model, epoch=epoch, training_start_timestamp=training_start_timestamp
+        )
+
+    print("Training finished")
+    print("Training time/epoch: %.2f secs/epoch" % np.mean(train_time))
+    print("The min rmse is : " + str(min(rmse)))
+    print("The min rmse epoch is : " + str(rmse.index(min(rmse))))
+    print("The min mae is : " + str(min(mae)))
+    print("The min mae epoch is : " + str(mae.index(min(mae))))
+    print("The min mape is : " + str(min(mape)))
+    print("The min mape epoch is : " + str(mape.index(min(mape))))
+    training_stats = {
+        "train_loss": train_loss_list,
+        "val_loss": val_loss_list,
+        "train_time": train_time,
+        "rmse": rmse,
+        "mae": mae,
+        "mape": mape,
+    }
+
+    # Evaluate on the test data
+    test_stats = evaluation(
+        model=model,
+        test_loader=test_loader,
+        true_value=true_value,
+        supports=supports,
+        device=device,
+        epoch=epoch,
+    )
+
+    # save training report
     training_params = {
         "dataset_name": dataset_name,
         "batch_size": batch_size,
@@ -394,24 +524,18 @@ if __name__ == "__main__":
         "learning_rate": learning_rate,
         "decay": decay,
         "optimizer": str(optimizer),
-        # model params:
-        "c_in": c_in,
-        "c_out": c_out,
-        "num_nodes": num_nodes,
-        "week": week,
-        "day": day,
-        "recent": recent,
-        "K": k,
-        "Kt": Kt,
-        "use_mixhop": use_mixhop,
         "device": str(device),
     }
     save_training_report(
-        training_params=training_params,
         training_start_timestamp=training_start_timestamp,
+        dataset_params=dataset_params,
+        model_params=model_params,
+        training_params=training_params,
         training_stats=training_stats,
         test_stats=test_stats,
     )
+
+    # plot RMSE and MAE evolution
     # 绘制折线图
     fig = plt.figure()
     fig = plt.figure(figsize=(15, 8))  # 画柱形图
@@ -420,7 +544,7 @@ if __name__ == "__main__":
     x = np.linspace(1, epochs, epochs)
     plt.errorbar(
         x,
-        rmse,
+        training_stats["rmse"],
         marker="H",
         markersize=12,
         yerr=yerr[0],
@@ -430,7 +554,7 @@ if __name__ == "__main__":
     )
     plt.errorbar(
         x,
-        mae,
+        training_stats["mae"],
         marker="D",
         markersize=10,
         yerr=yerr[1],
@@ -440,6 +564,11 @@ if __name__ == "__main__":
     )
 
     plt.show()
+
+    # save predictions on the test dataset:
+    prediction, spatial_at, parameter_adj = predict(
+        model, test_loader, supports, device
+    )
     np.savez_compressed(
         os.path.normpath(prediction_path),
         prediction=prediction,

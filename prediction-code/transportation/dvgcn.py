@@ -4,6 +4,8 @@
 @Fuction： （1）“Dynamic Causal Explanation Based Diffusion-Variational Graph Neural Network for Spatio-temporal Forecasting”； #
 """
 
+from typing import List
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -30,14 +32,17 @@ class DVGCN(nn.Module):
         Kt: int,
         device: torch.device,
         use_mixhop: bool = False,
+        adjacency_powers: List[int] = [0, 1, 2],
     ):
         """TODO param description"""
         super(DVGCN, self).__init__()
 
         if use_mixhop:
-            mh_coef = 3
+            print("Using MixHop layers")
+            mixhop_coef = len(adjacency_powers)
         else:
-            mh_coef = 1
+            print("Using Vanilla GCN layers")
+            mixhop_coef = 1
 
         self.device = device
 
@@ -50,22 +55,24 @@ class DVGCN(nn.Module):
             K=K,
             Kt=Kt,
             use_mixhop=use_mixhop,
+            adjacency_powers=adjacency_powers,
             device=device,
         )
         self.block2 = ST_BLOCK_2(
-            c_in=c_out * mh_coef,
+            c_in=c_out * mixhop_coef,
             c_out=c_out,
             num_nodes=num_nodes,
             tem_size=tem_size,
             K=K,
             Kt=Kt,
             use_mixhop=use_mixhop,
+            adjacency_powers=adjacency_powers,
             device=device,
         )
         self.bn = BatchNorm2d(c_in, affine=False)
 
         self.conv1 = Conv2d(
-            c_out * mh_coef,
+            c_out * mixhop_coef,
             1,
             kernel_size=(1, 1),
             padding=(0, 0),
@@ -73,7 +80,7 @@ class DVGCN(nn.Module):
             bias=True,
         )
         self.conv2 = Conv2d(
-            c_out * mh_coef,
+            c_out * mixhop_coef,
             1,
             kernel_size=(1, 1),
             padding=(0, 0),
@@ -81,7 +88,7 @@ class DVGCN(nn.Module):
             bias=True,
         )
         self.conv3 = Conv2d(
-            c_out * mh_coef,
+            c_out * mixhop_coef,
             1,
             kernel_size=(1, 1),
             padding=(0, 0),
@@ -89,7 +96,7 @@ class DVGCN(nn.Module):
             bias=True,
         )
         self.conv4 = Conv2d(
-            c_out * mh_coef,
+            c_out * mixhop_coef,
             1,
             kernel_size=(1, 2),
             padding=(0, 0),
@@ -144,6 +151,7 @@ class DVGCN(nn.Module):
         x3 = x[:, :, :, 24:36]
         x4 = x[:, :, :, 36:60]
 
+        # Residual layer
         x1 = self.conv1(x1).squeeze()
         x2 = self.conv2(x2).squeeze()
         x3 = self.conv3(x3).squeeze()

@@ -14,7 +14,6 @@ class MixHopLayer(nn.Module):
     https://arxiv.org/abs/1905.00067
     """
 
-    # def __init__(self, input_size: int, output_size: int, adjacency_powers: List[int], device: torch.device, use_bias: bool =True):
     def __init__(
         self,
         input_size: int,
