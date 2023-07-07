@@ -21,6 +21,8 @@ import torch.optim as optim
 from dvgcn import DVGCN
 from lib.data_preparation import read_and_generate_dataset
 from lib.utils import compute_val_loss, evaluate, predict, scaled_Laplacian
+from torch.nn.modules.loss import _Loss as TorchLoss
+from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from utils import save_model_checkpoint, save_training_report
@@ -254,7 +256,16 @@ def evaluation(
 
 
 # TODO move to another file
-def train():
+def train(
+    model: torch.nn.Module,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    supports: torch.Tensor,
+    device: torch.device,
+    loss_function: TorchLoss,
+    optimizer: Optimizer,
+    epochs: int,
+):
     clip = 5
     val_loss_list = []
     train_loss_list = []
@@ -264,6 +275,8 @@ def train():
     mape = []
     training_start_timestamp = str(datetime.now().strftime("%Y_%m_%d_%Hh%M"))
     print(f"training_start_timestamp: {training_start_timestamp}\n\n")
+
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, decay)
 
     save_model_checkpoint(
         model=model, epoch=0, training_start_timestamp=training_start_timestamp
@@ -350,7 +363,6 @@ def train():
 
 
 if __name__ == "__main__":
-
     # get dataset params
     data_folderpath = Path(__file__).parent.parent.parent.resolve() / "data/"
     dataset_params_filepath = (
@@ -403,108 +415,26 @@ if __name__ == "__main__":
     # loss function MSE
     loss_function = nn.MSELoss()
 
-    # Optimizer: Adam
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=wdecay)
-    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, decay)
-
     # calculate origin loss in epoch 0
     compute_val_loss(model, val_loader, loss_function, supports, device, epoch=0)
 
     # compute testing set MAE, RMSE, MAPE before training
     evaluate(model, test_loader, true_value, supports, device, epoch=0)
 
+    # Optimizer: Adam
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=wdecay)
+
     # train model
-    # TODO modularizar essa parte aqui
-    clip = 5
-    val_loss_list = []
-    train_loss_list = []
-    train_time = []
-    rmse = []
-    mae = []
-    mape = []
-    training_start_timestamp = str(datetime.now().strftime("%Y_%m_%d_%Hh%M"))
-    print(f"training_start_timestamp: {training_start_timestamp}\n\n")
-
-    save_model_checkpoint(
-        model=model, epoch=0, training_start_timestamp=training_start_timestamp
+    model, training_start_timestamp, training_stats = train(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        supports=supports,
+        device=device,
+        loss_function=loss_function,
+        optimizer=optimizer,
+        epochs=epochs,
     )
-    for epoch in range(1, epochs + 1):
-        train_l = []
-        start_time_train = time()
-        # for train_w, train_d, train_r, train_t, train_adj_r in train_loader:
-        for i, batch in enumerate(tqdm(train_loader, desc="Training", file=sys.stdout)):
-            train_w, train_d, train_r, train_t, train_adj_r = batch
-            train_w = train_w.to(device)
-            train_d = train_d.to(device)
-            train_r = train_r.to(device)
-            train_t = train_t.to(device)
-            train_adj_r = train_adj_r.to(device)
-
-            model.train()  # train pattern
-            optimizer.zero_grad()  # grad to 0
-
-            output, _, A = model(train_w, train_d, train_r, supports, train_adj_r)
-
-            loss = loss_function(output, train_t)
-            # backward p
-            loss.backward()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
-
-            # update parameter
-            optimizer.step()
-
-            training_loss = loss.item()
-            train_l.append(training_loss)
-        scheduler.step()
-        end_time_train = time()
-        train_l = np.mean(train_l)
-        train_loss_list.append(train_l)
-        print(
-            "epoch step: %s, training loss: %.2f, time: %.2fs"
-            % (epoch, train_l, end_time_train - start_time_train)
-        )
-        train_time.append(end_time_train - start_time_train)
-
-        # compute validation loss
-        valid_loss = compute_val_loss(
-            model, val_loader, loss_function, supports, device, epoch
-        )
-        val_loss_list.append(valid_loss)
-
-        # evaluate the model on testing set
-        rmse1, mae1, mape1 = evaluate(
-            model, test_loader, true_value, supports, device, epoch
-        )
-
-        rmse1 = round(rmse1, 4)
-        mae1 = round(mae1, 4)
-        mape1 = round(mape1, 4)
-
-        rmse.append(rmse1)
-        mae.append(mae1)
-        mape.append(mape1)
-
-        # save model checkpoint
-        save_model_checkpoint(
-            model=model, epoch=epoch, training_start_timestamp=training_start_timestamp
-        )
-
-    print("Training finished")
-    print("Training time/epoch: %.2f secs/epoch" % np.mean(train_time))
-    print("The min rmse is : " + str(min(rmse)))
-    print("The min rmse epoch is : " + str(rmse.index(min(rmse))))
-    print("The min mae is : " + str(min(mae)))
-    print("The min mae epoch is : " + str(mae.index(min(mae))))
-    print("The min mape is : " + str(min(mape)))
-    print("The min mape epoch is : " + str(mape.index(min(mape))))
-    training_stats = {
-        "train_loss": train_loss_list,
-        "val_loss": val_loss_list,
-        "train_time": train_time,
-        "rmse": rmse,
-        "mae": mae,
-        "mape": mape,
-    }
 
     # Evaluate on the test data
     test_stats = evaluation(
@@ -513,7 +443,7 @@ if __name__ == "__main__":
         true_value=true_value,
         supports=supports,
         device=device,
-        epoch=epoch,
+        epoch=epochs,
     )
 
     # save training report
