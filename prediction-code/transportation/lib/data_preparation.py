@@ -65,6 +65,7 @@ def read_and_generate_dataset(
     """
     data_seq = np.load(graph_signal_matrix_filename)["data"]
 
+    # load dynamic adjacency matrix
     adj = np.load(generated_adj_filename)
     adj = np.array(adj, dtype=np.float16)
 

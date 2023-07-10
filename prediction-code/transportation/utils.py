@@ -186,11 +186,18 @@ def evaluation(
     supports: torch.Tensor,
     device: torch.device,
     epoch: int,
+    use_dynamic_graph: bool = True,
 ):
     # Evaluate on the test data
     start_time_test = time()
     test_rmse, test_mae, test_mape = evaluate(
-        model, test_loader, true_value, supports, device, epoch
+        net=model,
+        test_loader=test_loader,
+        true_value=true_value,
+        supports=supports,
+        device=device,
+        epoch=epoch,
+        use_dynamic_graph=use_dynamic_graph,
     )
     end_time_test = time()
     test_time = np.mean(end_time_test - start_time_test)
@@ -217,6 +224,7 @@ def train(
     optimizer: Optimizer,
     decay: float,
     epochs: int,
+    use_dynamic_graph: bool = True,
 ):
     clip = 5
     val_loss_list = []
@@ -242,12 +250,18 @@ def train(
             train_d = train_d.to(device)
             train_r = train_r.to(device)
             train_t = train_t.to(device)
-            train_adj_r = train_adj_r.to(device)
+
+            # dynamic or static adjacency matrix
+            if use_dynamic_graph:
+                adj = train_adj_r.to(device)
+            else:
+                batch_size = train_adj_r.shape[0]
+                adj = supports.repeat(batch_size, 1, 1).to(device)
 
             model.train()  # train pattern
             optimizer.zero_grad()  # grad to 0
 
-            output, _, A = model(train_w, train_d, train_r, supports, train_adj_r)
+            output, _, A = model(train_w, train_d, train_r, supports, adj)
 
             loss = loss_function(output, train_t)
             # backward p
@@ -271,7 +285,13 @@ def train(
 
         # compute validation loss
         valid_loss = compute_val_loss(
-            model, val_loader, loss_function, supports, device, epoch
+            net=model,
+            val_loader=val_loader,
+            loss_function=loss_function,
+            supports=supports,
+            device=device,
+            epoch=epoch,
+            use_dynamic_graph=use_dynamic_graph,
         )
         val_loss_list.append(valid_loss)
 

@@ -73,7 +73,18 @@ parser.add_argument(
 parser.add_argument("--use_mixhop", action="store_true")
 parser.add_argument("--gcn", dest="use_mixhop", action="store_false")
 parser.set_defaults(use_mixhop=False)
-parser.add_argument("--dynamic_graph", action="store_true")
+parser.add_argument(
+    "--mixhop_neighborhood",
+    type=int,
+    default=2,
+    help="range of the MixHop neighborhood",
+    required=False,
+)
+parser.add_argument(
+    "--dynamic_graph",
+    action="store_true",
+    help="select if Adj matrix used will be the dynamic or the static one",
+)
 parser.add_argument("--static_graph", dest="dynamic_graph", action="store_false")
 parser.set_defaults(dynamic_graph=True)
 
@@ -81,17 +92,17 @@ parser.set_defaults(dynamic_graph=True)
 FLAGS = parser.parse_args()
 decay = FLAGS.decay
 dataset_name = FLAGS.data_name
-# Length = FLAGS.length # not used
 batch_size = FLAGS.batch_size
 num_nodes = FLAGS.num_point
 epochs = FLAGS.max_epoch
 learning_rate = FLAGS.learning_rate
+use_mixhop = FLAGS.use_mixhop
+mixhop_neighborhood = list(range(FLAGS.mixhop_neighborhood + 1))
+use_dynamic_graph = FLAGS.dynamic_graph
+
+# Length = FLAGS.length # not used
 # optimizer = FLAGS.optimizer # not used
 # num_of_vertices = FLAGS.num_point # not used
-use_mixhop = FLAGS.use_mixhop
-
-# TODO use to select if Adj matrix used will be the dynamic or the static one
-dynamic_graph = FLAGS.dynamic_graph
 
 
 if __name__ == "__main__":
@@ -155,7 +166,7 @@ if __name__ == "__main__":
         "K": 3,
         "Kt": 3,
         "use_mixhop": use_mixhop,
-        "adjacency_powers": [0, 1, 2],
+        "adjacency_powers": mixhop_neighborhood,
         "device": str(device),
     }
     print(f"Using model params: {model_params}")
@@ -166,10 +177,26 @@ if __name__ == "__main__":
     loss_function = nn.MSELoss()
 
     # calculate origin loss in epoch 0
-    compute_val_loss(model, val_loader, loss_function, supports, device, epoch=0)
+    compute_val_loss(
+        net=model,
+        val_loader=val_loader,
+        loss_function=loss_function,
+        supports=supports,
+        device=device,
+        epoch=0,
+        use_dynamic_graph=use_dynamic_graph,
+    )
 
     # compute testing set MAE, RMSE, MAPE before training
-    evaluate(model, test_loader, true_value, supports, device, epoch=0)
+    evaluate(
+        model,
+        test_loader,
+        true_value,
+        supports,
+        device,
+        epoch=0,
+        use_dynamic_graph=use_dynamic_graph,
+    )
 
     # Optimizer: Adam
     optimizer = torch.optim.Adam(
@@ -189,6 +216,7 @@ if __name__ == "__main__":
         optimizer=optimizer,
         decay=decay,
         epochs=epochs,
+        use_dynamic_graph=use_dynamic_graph,
     )
 
     # Evaluate on the test data
@@ -199,6 +227,7 @@ if __name__ == "__main__":
         supports=supports,
         device=device,
         epoch=epochs,
+        use_dynamic_graph=use_dynamic_graph,
     )
 
     # save training report
@@ -208,6 +237,7 @@ if __name__ == "__main__":
         "epochs": epochs,
         "learning_rate": learning_rate,
         "decay": decay,
+        "use_dynamic_graph": use_dynamic_graph,
         "optimizer": str(optimizer),
         "device": str(device),
     }
@@ -247,12 +277,15 @@ if __name__ == "__main__":
         lolims=True,
         label="mae",
     )
-
     plt.show()
 
     # save predictions on the test dataset:
     prediction, spatial_at, parameter_adj = predict(
-        model, test_loader, supports, device
+        net=model,
+        test_loader=test_loader,
+        supports=supports,
+        device=device,
+        use_dynamic_graph=use_dynamic_graph,
     )
     np.savez_compressed(
         os.path.normpath(prediction_path),
