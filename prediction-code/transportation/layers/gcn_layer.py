@@ -8,11 +8,14 @@ import torch.nn.functional as F
 def gcn_message_passing(
     adj: torch.Tensor, x: torch.Tensor, device: torch.device, a_power: int = 1
 ):
+    # x = (adj ** a_power) * x
     batch_size, num_features, num_nodes, time_size = x.shape
 
     # get simmetrically normalized adjacency matrix from Kipf & Welling (2017)
     adj = normalize_adjacency(adj=adj, device=device)
-    adj_power = adj.pow(a_power)
+    adj_power = adj
+    for _ in range(a_power - 1):
+        adj_power = adj_power @ adj
     adj_power = adj_power.to_dense()  # Convert sparse matrix to dense
 
     # Reshape adj_power to match the dimensions of x
@@ -21,16 +24,19 @@ def gcn_message_passing(
     )  # Shape: [batch_size, time_size, n, n]
 
     # Reshape x to match the dimensions of adj_power
-    x_new = x.permute(
+    x = x.permute(
         0, 3, 2, 1
     ).contiguous()  # Shape: [batch_size, time_size, num_nodes, num_features]
-    x_new = x_new.view(
+    x = x.view(
         batch_size * time_size, num_nodes, num_features
-    )  # Reshape to [batch_size*time_size, num_nodes, num_features]
+    )  # Reshape x to [batch_size*time_size, num_nodes, num_features]
+
+    # Reshape adj_power to [batch_size*time_size, num_nodes, num_features]
+    adj_power = adj_power.view(-1, num_nodes, num_nodes)
 
     # Perform batch matrix multiplication
     result = torch.bmm(
-        adj_power.view(-1, num_nodes, num_nodes), x_new
+        adj_power, x
     )  # Shape: [batch_size*time_size, num_nodes, num_features]
 
     # Reshape the result back to the original shape of x
@@ -40,8 +46,8 @@ def gcn_message_passing(
     )  # Shape: [batch_size, num_features, num_nodes, time_size]
 
     # Assign the result back to x
-    x_new = result.clone()
-    return x_new
+    x = result.clone()
+    return x
 
 
 # TODO move to another file
