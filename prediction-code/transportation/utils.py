@@ -117,10 +117,11 @@ def get_data_loaders(
     )
     # read all data from graph signal matrix file
     print("Reading data...")
-    # load adj matrix
-    adj = np.mat(pd.read_csv(adj_matrix_csv_filepath, header=None), dtype=float)
-    adjs = scaled_Laplacian(adj)
+    # load static adjacency matrix
+    static_adj = np.mat(pd.read_csv(adj_matrix_csv_filepath, header=None), dtype=float)
+    adjs = scaled_Laplacian(static_adj)
     supports = (torch.tensor(adjs)).type(torch.float32).to(device)
+    static_adj = (torch.tensor(static_adj)).type(torch.float32).to(device)
     # Input: train / valid  / test : length x 3 x NUM_POINT x 12
     all_data = read_and_generate_dataset(
         dataset_name,
@@ -175,7 +176,7 @@ def get_data_loaders(
         batch_size=batch_size,
         shuffle=False,
     )
-    return train_loader, val_loader, test_loader, true_value, supports
+    return train_loader, val_loader, test_loader, true_value, supports, static_adj
 
 
 # TODO move to another file
@@ -183,7 +184,7 @@ def evaluation(
     model: torch.nn.Module,
     test_loader: DataLoader,
     true_value: np.ndarray,
-    supports: torch.Tensor,
+    static_adj: torch.Tensor,
     device: torch.device,
     epoch: int,
     use_dynamic_graph: bool = True,
@@ -194,7 +195,7 @@ def evaluation(
         net=model,
         test_loader=test_loader,
         true_value=true_value,
-        supports=supports,
+        static_adj=static_adj,
         device=device,
         epoch=epoch,
         use_dynamic_graph=use_dynamic_graph,
@@ -217,7 +218,7 @@ def train(
     train_loader: DataLoader,
     val_loader: DataLoader,
     test_loader: DataLoader,
-    supports: torch.Tensor,
+    static_adj: torch.Tensor,
     true_value: torch.Tensor,
     device: torch.device,
     loss_function: TorchLoss,
@@ -256,12 +257,12 @@ def train(
                 adj = train_adj_r.to(device)
             else:
                 batch_size = train_adj_r.shape[0]
-                adj = supports.repeat(batch_size, 1, 1).to(device)
+                adj = static_adj.repeat(batch_size, 1, 1).to(device)
 
             model.train()  # train pattern
             optimizer.zero_grad()  # grad to 0
 
-            output, _, A = model(train_w, train_d, train_r, supports, adj)
+            output, _, A = model(train_w, train_d, train_r, static_adj, adj)
 
             loss = loss_function(output, train_t)
             # backward p
@@ -288,7 +289,7 @@ def train(
             net=model,
             val_loader=val_loader,
             loss_function=loss_function,
-            supports=supports,
+            static_adj=static_adj,
             device=device,
             epoch=epoch,
             use_dynamic_graph=use_dynamic_graph,
@@ -297,7 +298,7 @@ def train(
 
         # evaluate the model on testing set
         rmse1, mae1, mape1 = evaluate(
-            model, test_loader, true_value, supports, device, epoch
+            model, test_loader, true_value, static_adj, device, epoch
         )
 
         rmse1 = round(rmse1, 4)

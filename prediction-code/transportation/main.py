@@ -88,6 +88,14 @@ parser.add_argument(
 parser.add_argument("--static_graph", dest="dynamic_graph", action="store_false")
 parser.set_defaults(dynamic_graph=True)
 
+parser.add_argument(
+    "--use_cuda",
+    action="store_true",
+    help="select if CUDA (GPU) is going to be used, or CPU",
+)
+parser.add_argument("--use_cpu", dest="use_cuda", action="store_false")
+parser.set_defaults(use_cuda=True)
+
 # parse arguments
 FLAGS = parser.parse_args()
 decay = FLAGS.decay
@@ -99,6 +107,7 @@ learning_rate = FLAGS.learning_rate
 use_mixhop = FLAGS.use_mixhop
 mixhop_neighborhood = list(range(FLAGS.mixhop_neighborhood + 1))
 use_dynamic_graph = FLAGS.dynamic_graph
+use_cuda = FLAGS.use_cuda
 
 # Length = FLAGS.length # not used
 # optimizer = FLAGS.optimizer # not used
@@ -113,7 +122,7 @@ if __name__ == "__main__":
     # set device (CUDA or cpu)
     print("Torch version: " + torch.__version__)
     print("Is CUDA available? " + str(torch.cuda.is_available()))
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and use_cuda:
         device = torch.device(FLAGS.device)
     else:
         device = torch.device("cpu")
@@ -148,12 +157,21 @@ if __name__ == "__main__":
         "merge": dataset_params_configparser["params"].getboolean("merge"),
     }
     # load dataset
-    train_loader, val_loader, test_loader, true_value, supports = get_data_loaders(
+    (
+        train_loader,
+        val_loader,
+        test_loader,
+        true_value,
+        supports,
+        static_adj,
+    ) = get_data_loaders(
         dataset_name=dataset_name,
         batch_size=batch_size,
         dataset_params=dataset_params,
         device=device,
     )
+
+    # TODO get num_nodes from dataset
 
     # initialize model
     model_params = {
@@ -181,7 +199,7 @@ if __name__ == "__main__":
         net=model,
         val_loader=val_loader,
         loss_function=loss_function,
-        supports=supports,
+        static_adj=static_adj,
         device=device,
         epoch=0,
         use_dynamic_graph=use_dynamic_graph,
@@ -192,7 +210,7 @@ if __name__ == "__main__":
         model,
         test_loader,
         true_value,
-        supports,
+        static_adj,
         device,
         epoch=0,
         use_dynamic_graph=use_dynamic_graph,
@@ -209,7 +227,7 @@ if __name__ == "__main__":
         train_loader=train_loader,
         val_loader=val_loader,
         test_loader=test_loader,
-        supports=supports,
+        static_adj=static_adj,
         true_value=true_value,
         device=device,
         loss_function=loss_function,
@@ -224,7 +242,7 @@ if __name__ == "__main__":
         model=model,
         test_loader=test_loader,
         true_value=true_value,
-        supports=supports,
+        static_adj=static_adj,
         device=device,
         epoch=epochs,
         use_dynamic_graph=use_dynamic_graph,
@@ -283,7 +301,7 @@ if __name__ == "__main__":
     prediction, spatial_at, parameter_adj = predict(
         net=model,
         test_loader=test_loader,
-        supports=supports,
+        static_adj=static_adj,
         device=device,
         use_dynamic_graph=use_dynamic_graph,
     )
