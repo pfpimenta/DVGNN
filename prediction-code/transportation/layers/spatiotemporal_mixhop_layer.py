@@ -100,11 +100,7 @@ class SpatioTemporalMixHopLayer(nn.Module):
             self.weights[a_power] = self.weights[a_power].to(self.device)
 
         # multiply features by weights
-        try:
-            # TODO fix bug here:
-            x = torch.einsum("abcd, bx -> axcd", x, self.weights[a_power])
-        except:
-            breakpoint()
+        x = torch.einsum("abcd, bx -> axcd", x, self.weights[a_power])
 
         # add bias
         if self.biases is not None:
@@ -129,6 +125,8 @@ class SpatioTemporalMixHopLayer(nn.Module):
 
     def time_conv(self, x: torch.Tensor, t_degree: int):
         # equivalent of GCN conv but in time instead of in graph space
+        # TODO fix bug:
+        # time_matrix should multiply x in the TIME dimension
 
         if self.t_weights[t_degree].device != self.device:
             self.t_weights[t_degree] = self.t_weights[t_degree].to(self.device)

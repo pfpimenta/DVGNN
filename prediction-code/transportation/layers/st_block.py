@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from layers.gcn_layer import GCNLayer
 from layers.mixhop_layer import MixHopLayer
+from layers.spatiotemporal_mixhop_layer import SpatioTemporalMixHopLayer
 from layers.t_cheby_conv_ds import T_cheby_conv_ds
 from layers.ttat import TATT_1
 from torch.nn import Conv2d, LayerNorm
@@ -28,17 +29,38 @@ class ST_BLOCK_2(nn.Module):
         use_mixhop: bool = False,
     ):
         super(ST_BLOCK_2, self).__init__()
+
         # before: Chebychev conv
         # self.dynamic_gcn=T_cheby_conv_ds(c_out,2*c_out,K,Kt)
         # self.dynamic_gcn2 = T_cheby_conv_ds(c_out,c_out,K,Kt)
+
         # modification: MixHop layers or Vanilla GCN layers
         self.use_mixhop = use_mixhop
         self.adjacency_powers = adjacency_powers
+        temporal_degrees = [1]
         if self.use_mixhop:
+
+            # TODO debug: use STMixhop
+            # self.c_out = c_out * (len(self.adjacency_powers) + len(temporal_degrees))
+            # self.dynamic_gcn = SpatioTemporalMixHopLayer(
+            #     input_size = self.c_out,
+            #     output_size = c_out * 2,
+            #     adjacency_powers=self.adjacency_powers,
+            #     temporal_degrees=temporal_degrees,
+            #     device=device,
+            # )
+            # self.dynamic_gcn2 = SpatioTemporalMixHopLayer(
+            #     input_size=c_out,
+            #     output_size=c_out,
+            #     adjacency_powers=self.adjacency_powers,
+            #     temporal_degrees=temporal_degrees,
+            #     device=device,
+            # )
+
             # print("Using MixHop")
             self.c_out = c_out * len(self.adjacency_powers)  # only for MixHop
             self.dynamic_gcn = MixHopLayer(
-                input_size=c_out * len(self.adjacency_powers),
+                input_size=self.c_out,
                 output_size=c_out * 2,
                 adjacency_powers=self.adjacency_powers,
                 device=device,
