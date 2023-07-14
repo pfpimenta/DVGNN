@@ -26,13 +26,10 @@ def get_project_root_folderpath() -> str:
     return project_folderpath
 
 
-def get_training_results_dir(epoch: int, training_start_timestamp: str) -> str:
+def get_training_results_dir(training_start_timestamp: str) -> str:
     project_folderpath = get_project_root_folderpath()
     training_results_dir = (
-        project_folderpath
-        / "training_results"
-        / f"{training_start_timestamp}"
-        / f"{epoch}"
+        project_folderpath / "training_results" / f"{training_start_timestamp}"
     )
     training_results_dir.mkdir(parents=True, exist_ok=True)
     return training_results_dir
@@ -55,10 +52,12 @@ def save_training_report(
         "training_stats": training_stats,
         "test_stats": test_stats,
     }
-    folderpath = (
-        Path(__file__).parent.parent.parent.resolve() / "data" / "Transportation"
+    training_results_dir = get_training_results_dir(
+        training_start_timestamp=training_start_timestamp
     )
-    json_filepath = folderpath / f"training_report_{training_start_timestamp}.json"
+    json_filepath = (
+        training_results_dir / f"training_report_{training_start_timestamp}.json"
+    )
     with open(json_filepath, "w") as f:
         json.dump(training_report, f)
     print(f"Saved complete training report on {json_filepath}")
@@ -73,7 +72,9 @@ def save_training_report(
     text_report += f"\n* Minimum RMSE: {np.min(training_stats['rmse'])}"
     text_report += f"\n* Minimum MAPE: {np.min(training_stats['mape'])}"
     text_report += "\n"
-    txt_filepath = folderpath / f"training_report_{training_start_timestamp}.txt"
+    txt_filepath = (
+        training_results_dir / f"training_report_{training_start_timestamp}.txt"
+    )
     with open(txt_filepath, "w") as f:
         f.write(text_report)
     print(f"Saved summarized training report on {txt_filepath}")
@@ -88,9 +89,11 @@ def save_model_checkpoint(
     # training_loss_list: np.ndarray,
 ) -> None:
     # saves model at training_results/{timestamp}/{epoch}/model.pt
-    training_results_dir = get_training_results_dir(
-        epoch=epoch, training_start_timestamp=training_start_timestamp
+    training_results_dir = (
+        get_training_results_dir(training_start_timestamp=training_start_timestamp)
+        / f"epoch_{epoch}"
     )
+    training_results_dir.mkdir(parents=True, exist_ok=True)
     trained_model_filepath = training_results_dir / "model.pt"
     torch.save(model.state_dict(), trained_model_filepath)
     print(f"Saved {trained_model_filepath}")
