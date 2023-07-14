@@ -33,7 +33,6 @@ parser.add_argument(
 parser.add_argument(
     "--batch_size",
     type=int,
-    # default=16,
     default=16,
     help="Batch Size during training [default: Tdrive: 8, los_loop: 16, PEMS08: 16]",
 )
@@ -61,13 +60,6 @@ parser.add_argument(
     type=str,
     default="Tdrive",
     help="The dataset name: Tdrive, Los_loop, PEMS08 ",
-    required=False,
-)
-parser.add_argument(
-    "--num_point",
-    type=int,
-    default=64,
-    help="road or grid Point Number 64,207,170 ",
     required=False,
 )
 parser.add_argument("--use_mixhop", action="store_true")
@@ -101,7 +93,6 @@ FLAGS = parser.parse_args()
 decay = FLAGS.decay
 dataset_name = FLAGS.data_name
 batch_size = FLAGS.batch_size
-num_nodes = FLAGS.num_point
 epochs = FLAGS.max_epoch
 learning_rate = FLAGS.learning_rate
 use_mixhop = FLAGS.use_mixhop
@@ -111,7 +102,6 @@ use_cuda = FLAGS.use_cuda
 
 # Length = FLAGS.length # not used
 # optimizer = FLAGS.optimizer # not used
-# num_of_vertices = FLAGS.num_point # not used
 
 
 if __name__ == "__main__":
@@ -171,7 +161,8 @@ if __name__ == "__main__":
         device=device,
     )
 
-    # TODO get num_nodes from dataset
+    # get num_nodes from dataset
+    num_nodes = static_adj.shape[0]
 
     # initialize model
     model_params = {
